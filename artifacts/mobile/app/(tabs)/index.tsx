@@ -17,7 +17,7 @@ import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { COLORS } from "@/constants/colors";
 import { useAuth } from "@/lib/auth";
-import { fetchItems, fetchCategories } from "@/lib/api";
+import { apiGetItems, apiGetCategories } from "@/lib/api";
 import { ItemCard } from "@/components/ItemCard";
 
 export default function FeedScreen() {
@@ -30,7 +30,7 @@ export default function FeedScreen() {
 
   const { data: categories = [] } = useQuery({
     queryKey: ["categories"],
-    queryFn: fetchCategories,
+    queryFn: apiGetCategories,
   });
 
   const {
@@ -40,7 +40,8 @@ export default function FeedScreen() {
     isRefetching,
   } = useQuery({
     queryKey: ["items", selectedCategory],
-    queryFn: () => fetchItems(selectedCategory ? { category: selectedCategory } : undefined),
+    queryFn: () =>
+      apiGetItems(selectedCategory ? { category: selectedCategory } : undefined),
   });
 
   const handleRefresh = useCallback(() => {
@@ -54,7 +55,9 @@ export default function FeedScreen() {
       <View style={[styles.cardWrapper, isLeft ? styles.leftCard : styles.rightCard]}>
         <ItemCard
           item={item}
-          onPress={() => router.push({ pathname: "/item/[id]", params: { id: item.id } })}
+          onPress={() =>
+            router.push({ pathname: "/item/[id]", params: { id: item.id } })
+          }
         />
       </View>
     );
@@ -64,7 +67,7 @@ export default function FeedScreen() {
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: topPad + 8 }]}>
         <Text style={styles.title}>Fits</Text>
-        {isAuthenticated && (
+        {isAuthenticated ? (
           <TouchableOpacity
             style={styles.addBtn}
             onPress={() => router.push("/add-item")}
@@ -77,6 +80,13 @@ export default function FeedScreen() {
             >
               <Feather name="plus" size={22} color="#fff" />
             </LinearGradient>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.loginChip}
+            onPress={() => router.push("/login")}
+          >
+            <Text style={styles.loginChipText}>Войти</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -173,10 +183,7 @@ function CategoryChip({
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
+  container: { flex: 1, backgroundColor: COLORS.background },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -205,14 +212,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  categoriesContainer: {
-    marginBottom: 4,
-  },
-  categories: {
+  loginChip: {
     paddingHorizontal: 16,
-    gap: 8,
-    paddingVertical: 4,
+    paddingVertical: 8,
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
   },
+  loginChipText: {
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+    color: "#fff",
+  },
+  categoriesContainer: { marginBottom: 4 },
+  categories: { paddingHorizontal: 16, gap: 8, paddingVertical: 4 },
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 7,
@@ -221,23 +233,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  chipSelected: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
+  chipSelected: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   chipText: {
     fontSize: 13,
     fontFamily: "Inter_500Medium",
     color: COLORS.textSecondary,
   },
-  chipTextSelected: {
-    color: COLORS.white,
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  chipTextSelected: { color: COLORS.white },
+  loadingContainer: { flex: 1, alignItems: "center", justifyContent: "center" },
   emptyContainer: {
     flex: 1,
     alignItems: "center",
@@ -269,20 +272,9 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_600SemiBold",
     color: COLORS.white,
   },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-  },
-  row: {
-    justifyContent: "space-between",
-  },
-  cardWrapper: {
-    flex: 1,
-  },
-  leftCard: {
-    marginRight: 8,
-  },
-  rightCard: {
-    marginLeft: 8,
-  },
+  listContent: { paddingHorizontal: 16, paddingTop: 8 },
+  row: { justifyContent: "space-between" },
+  cardWrapper: { flex: 1 },
+  leftCard: { marginRight: 8 },
+  rightCard: { marginLeft: 8 },
 });

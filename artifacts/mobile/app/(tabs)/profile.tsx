@@ -5,7 +5,6 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  Image,
   ActivityIndicator,
   Alert,
   Platform,
@@ -17,13 +16,12 @@ import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { COLORS } from "@/constants/colors";
 import { useAuth } from "@/lib/auth";
-import { fetchItems, deleteItem } from "@/lib/api";
+import { apiGetItems, apiDeleteItem } from "@/lib/api";
 import { ItemCard } from "@/components/ItemCard";
-import * as Haptics from "expo-haptics";
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const { user, isAuthenticated, isLoading: authLoading, login, logout } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
   const queryClient = useQueryClient();
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -35,42 +33,49 @@ export default function ProfileScreen() {
     isRefetching,
   } = useQuery({
     queryKey: ["items", "profile", user?.id],
-    queryFn: () => fetchItems({ userId: user!.id }),
+    queryFn: () => apiGetItems({ userId: user!.id }),
     enabled: !!user,
   });
 
-  const handleDelete = useCallback((id: number) => {
-    Alert.alert("Удалить вещь?", "Это действие нельзя отменить.", [
-      { text: "Отмена", style: "cancel" },
-      {
-        text: "Удалить",
-        style: "destructive",
-        onPress: async () => {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-          try {
-            await deleteItem(id);
-            queryClient.invalidateQueries({ queryKey: ["items"] });
-          } catch {
-            Alert.alert("Ошибка", "Не удалось удалить вещь");
-          }
+  const handleDelete = useCallback(
+    (id: number) => {
+      Alert.alert("Удалить вещь?", "Это действие нельзя отменить.", [
+        { text: "Отмена", style: "cancel" },
+        {
+          text: "Удалить",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await apiDeleteItem(id);
+              queryClient.invalidateQueries({ queryKey: ["items"] });
+            } catch {
+              Alert.alert("Ошибка", "Не удалось удалить вещь");
+            }
+          },
         },
-      },
-    ]);
-  }, [queryClient]);
+      ]);
+    },
+    [queryClient]
+  );
 
-  const renderItem = useCallback(({ item, index }: any) => {
-    const isLeft = index % 2 === 0;
-    return (
-      <View style={[styles.cardWrapper, isLeft ? styles.leftCard : styles.rightCard]}>
-        <ItemCard
-          item={item}
-          onPress={() => router.push({ pathname: "/item/[id]", params: { id: item.id } })}
-          isOwner
-          onDelete={handleDelete}
-        />
-      </View>
-    );
-  }, [handleDelete]);
+  const renderItem = useCallback(
+    ({ item, index }: any) => {
+      const isLeft = index % 2 === 0;
+      return (
+        <View style={[styles.cardWrapper, isLeft ? styles.leftCard : styles.rightCard]}>
+          <ItemCard
+            item={item}
+            onPress={() =>
+              router.push({ pathname: "/item/[id]", params: { id: item.id } })
+            }
+            isOwner
+            onDelete={handleDelete}
+          />
+        </View>
+      );
+    },
+    [handleDelete]
+  );
 
   if (authLoading) {
     return (
@@ -80,6 +85,7 @@ export default function ProfileScreen() {
     );
   }
 
+  // Не авторизован — показываем приглашение войти
   if (!isAuthenticated) {
     return (
       <View style={[styles.container, { paddingTop: topPad }]}>
@@ -89,25 +95,27 @@ export default function ProfileScreen() {
           </View>
           <Text style={styles.notLoggedInTitle}>Войдите в аккаунт</Text>
           <Text style={styles.notLoggedInText}>
-            Чтобы добавлять вещи и управлять гардеробом
+            Чтобы добавлять вещи и управлять своим гардеробом
           </Text>
-          <TouchableOpacity style={styles.loginBtn} onPress={login}>
-            <Text style={styles.loginBtnText}>Войти</Text>
+          <TouchableOpacity
+            style={styles.loginBtn}
+            onPress={() => router.push("/login")}
+          >
+            <Text style={styles.loginBtnText}>Войти / Зарегистрироваться</Text>
           </TouchableOpacity>
         </View>
       </View>
     );
   }
 
-  const displayName = user?.firstName
-    ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ""}`
-    : "Пользователь";
-
   return (
     <View style={[styles.container, { paddingTop: topPad }]}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Профиль</Text>
-        <TouchableOpacity onPress={logout} hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+        <TouchableOpacity
+          onPress={logout}
+          hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+        >
           <Feather name="log-out" size={20} color={COLORS.textSecondary} />
         </TouchableOpacity>
       </View>
@@ -125,18 +133,14 @@ export default function ProfileScreen() {
                 colors={[COLORS.primarySurface, COLORS.white]}
                 style={styles.profileCard}
               >
-                {user?.profileImageUrl ? (
-                  <Image source={{ uri: user.profileImageUrl }} style={styles.avatar} />
-                ) : (
-                  <View style={[styles.avatar, styles.avatarPlaceholder]}>
-                    <Feather name="user" size={28} color={COLORS.primary} />
-                  </View>
-                )}
+                <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                  <Text style={styles.avatarLetter}>
+                    {user?.username?.[0]?.toUpperCase() ?? "?"}
+                  </Text>
+                </View>
                 <View style={styles.profileInfo}>
-                  <Text style={styles.profileName}>{displayName}</Text>
-                  {user?.email && (
-                    <Text style={styles.profileEmail}>{user.email}</Text>
-                  )}
+                  <Text style={styles.profileName}>{user?.username}</Text>
+                  <Text style={styles.profileEmail}>{user?.email}</Text>
                 </View>
                 <View style={styles.statsRow}>
                   <View style={styles.stat}>
@@ -175,9 +179,7 @@ export default function ProfileScreen() {
             <View style={styles.emptyContainer}>
               <Feather name="shopping-bag" size={40} color={COLORS.gray300} />
               <Text style={styles.emptyText}>Гардероб пока пуст</Text>
-              <Text style={styles.emptySubtext}>
-                Добавьте первую вещь
-              </Text>
+              <Text style={styles.emptySubtext}>Добавьте первую вещь</Text>
             </View>
           )
         }
@@ -194,15 +196,8 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  centered: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  container: { flex: 1, backgroundColor: COLORS.background },
+  centered: { flex: 1, alignItems: "center", justifyContent: "center" },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -217,10 +212,7 @@ const styles = StyleSheet.create({
     color: COLORS.black,
     letterSpacing: -1,
   },
-  profileSection: {
-    paddingHorizontal: 16,
-    marginBottom: 20,
-  },
+  profileSection: { paddingHorizontal: 16, marginBottom: 20 },
   profileCard: {
     borderRadius: 20,
     padding: 20,
@@ -230,14 +222,9 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 3,
   },
-  avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    marginBottom: 12,
-  },
+  avatar: { width: 64, height: 64, borderRadius: 32, marginBottom: 12 },
   avatarPlaceholder: {
-    backgroundColor: COLORS.primarySurface,
+    backgroundColor: COLORS.primary,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -250,9 +237,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 16,
   },
-  profileInfo: {
-    marginBottom: 16,
+  avatarLetter: {
+    fontSize: 26,
+    fontFamily: "Inter_700Bold",
+    color: "#fff",
   },
+  profileInfo: { marginBottom: 16 },
   profileName: {
     fontSize: 20,
     fontFamily: "Inter_700Bold",
@@ -264,14 +254,8 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     color: COLORS.textSecondary,
   },
-  statsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  stat: {
-    alignItems: "center",
-    flex: 1,
-  },
+  statsRow: { flexDirection: "row", alignItems: "center" },
+  stat: { alignItems: "center", flex: 1 },
   statNumber: {
     fontSize: 22,
     fontFamily: "Inter_700Bold",
@@ -315,30 +299,13 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_500Medium",
     color: COLORS.primary,
   },
-  listContent: {
-    paddingHorizontal: 16,
-  },
-  row: {
-    justifyContent: "space-between",
-  },
-  cardWrapper: {
-    flex: 1,
-  },
-  leftCard: {
-    marginRight: 8,
-  },
-  rightCard: {
-    marginLeft: 8,
-  },
-  loadingContainer: {
-    paddingTop: 40,
-    alignItems: "center",
-  },
-  emptyContainer: {
-    paddingTop: 40,
-    alignItems: "center",
-    gap: 8,
-  },
+  listContent: { paddingHorizontal: 16 },
+  row: { justifyContent: "space-between" },
+  cardWrapper: { flex: 1 },
+  leftCard: { marginRight: 8 },
+  rightCard: { marginLeft: 8 },
+  loadingContainer: { paddingTop: 40, alignItems: "center" },
+  emptyContainer: { paddingTop: 40, alignItems: "center", gap: 8 },
   emptyText: {
     fontSize: 16,
     fontFamily: "Inter_600SemiBold",
@@ -370,7 +337,7 @@ const styles = StyleSheet.create({
   },
   loginBtn: {
     marginTop: 8,
-    paddingHorizontal: 32,
+    paddingHorizontal: 28,
     paddingVertical: 14,
     backgroundColor: COLORS.primary,
     borderRadius: 14,
@@ -381,7 +348,7 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   loginBtnText: {
-    fontSize: 16,
+    fontSize: 15,
     fontFamily: "Inter_600SemiBold",
     color: COLORS.white,
   },

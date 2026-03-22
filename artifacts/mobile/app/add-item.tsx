@@ -15,10 +15,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
 import { COLORS } from "@/constants/colors";
 import { useAuth } from "@/lib/auth";
-import { fetchCategories, createItem } from "@/lib/api";
+import { apiGetCategories, apiCreateItem } from "@/lib/api";
 
 export default function AddItemScreen() {
   const insets = useSafeAreaInsets();
@@ -36,29 +35,26 @@ export default function AddItemScreen() {
 
   const { data: categories = [] } = useQuery({
     queryKey: ["categories"],
-    queryFn: fetchCategories,
+    queryFn: apiGetCategories,
   });
 
-  const isValid = name.trim().length > 0 && category.length > 0 && photoUrl.trim().length > 0;
+  const isValid =
+    name.trim().length > 0 && category.length > 0 && photoUrl.trim().length > 0;
 
   const handleSave = async () => {
     if (!isValid || isSaving) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
     setIsSaving(true);
     try {
-      await createItem({
+      await apiCreateItem({
         name: name.trim(),
         category,
         description: description.trim() || undefined,
         photoUrl: photoUrl.trim(),
       });
-
       queryClient.invalidateQueries({ queryKey: ["items"] });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
-    } catch {
-      Alert.alert("Ошибка", "Не удалось добавить вещь. Попробуйте снова.");
+    } catch (err: any) {
+      Alert.alert("Ошибка", err.message ?? "Не удалось добавить вещь. Попробуйте снова.");
     } finally {
       setIsSaving(false);
     }
@@ -127,7 +123,7 @@ export default function AddItemScreen() {
               keyboardType="url"
               returnKeyType="next"
             />
-            <Text style={styles.hint}>Вставьте ссылку на изображение вещи</Text>
+            <Text style={styles.hint}>Вставьте прямую ссылку на изображение вещи</Text>
           </View>
 
           <View style={styles.field}>
@@ -141,7 +137,10 @@ export default function AddItemScreen() {
                   activeOpacity={0.7}
                 >
                   <Text
-                    style={[styles.catChipText, category === cat && styles.catChipTextSelected]}
+                    style={[
+                      styles.catChipText,
+                      category === cat && styles.catChipTextSelected,
+                    ]}
                   >
                     {cat}
                   </Text>
@@ -171,10 +170,7 @@ export default function AddItemScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.white,
-  },
+  container: { flex: 1, backgroundColor: COLORS.white },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -206,22 +202,14 @@ const styles = StyleSheet.create({
     minWidth: 90,
     alignItems: "center",
   },
-  saveBtnDisabled: {
-    opacity: 0.4,
-  },
+  saveBtnDisabled: { opacity: 0.4 },
   saveBtnText: {
     fontSize: 14,
     fontFamily: "Inter_600SemiBold",
     color: COLORS.white,
   },
-  content: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    gap: 20,
-  },
-  field: {
-    gap: 8,
-  },
+  content: { paddingHorizontal: 20, paddingTop: 20, gap: 20 },
+  field: { gap: 8 },
   label: {
     fontSize: 13,
     fontFamily: "Inter_600SemiBold",
@@ -240,21 +228,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  textArea: {
-    height: 100,
-    paddingTop: 14,
-  },
+  textArea: { height: 100, paddingTop: 14 },
   hint: {
     fontSize: 12,
     fontFamily: "Inter_400Regular",
     color: COLORS.textTertiary,
     marginTop: -4,
   },
-  categoriesGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
+  categoriesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   catChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -272,7 +253,5 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_500Medium",
     color: COLORS.textSecondary,
   },
-  catChipTextSelected: {
-    color: COLORS.primary,
-  },
+  catChipTextSelected: { color: COLORS.primary },
 });

@@ -16,13 +16,13 @@ import Animated, {
   withSequence,
 } from "react-native-reanimated";
 import { COLORS } from "@/constants/colors";
-import { ItemWithUser, toggleLike } from "@/lib/api";
+import { WardrobeItem, apiToggleLike } from "@/lib/api";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - 48) / 2;
 
 interface Props {
-  item: ItemWithUser;
+  item: WardrobeItem;
   onPress: () => void;
   isOwner?: boolean;
   onDelete?: (id: number) => void;
@@ -58,7 +58,7 @@ export function ItemCard({ item, onPress, isOwner, onDelete }: Props) {
     setLikesCount((c) => (wasLiked ? c - 1 : c + 1));
 
     try {
-      const result = await toggleLike(item.id);
+      const result = await apiToggleLike(item.id);
       setLiked(result.liked);
       setLikesCount(result.likesCount);
     } catch {
@@ -69,9 +69,7 @@ export function ItemCard({ item, onPress, isOwner, onDelete }: Props) {
     }
   };
 
-  const displayName = item.userFirstName
-    ? `${item.userFirstName}${item.userLastName ? ` ${item.userLastName}` : ""}`
-    : "Пользователь";
+  const displayName = item.username ?? "Пользователь";
 
   return (
     <Animated.View style={[styles.card, animStyle]}>
@@ -97,24 +95,25 @@ export function ItemCard({ item, onPress, isOwner, onDelete }: Props) {
         </View>
 
         <View style={styles.info}>
-          <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+          <Text style={styles.itemName} numberOfLines={1}>
+            {item.name}
+          </Text>
           {item.description ? (
-            <Text style={styles.description} numberOfLines={2}>{item.description}</Text>
+            <Text style={styles.description} numberOfLines={2}>
+              {item.description}
+            </Text>
           ) : null}
 
           <View style={styles.footer}>
             <View style={styles.userRow}>
-              {item.userProfileImageUrl ? (
-                <Image
-                  source={{ uri: item.userProfileImageUrl }}
-                  style={styles.avatar}
-                />
-              ) : (
-                <View style={[styles.avatar, styles.avatarPlaceholder]}>
-                  <Feather name="user" size={10} color={COLORS.gray500} />
-                </View>
-              )}
-              <Text style={styles.userName} numberOfLines={1}>{displayName}</Text>
+              <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                <Text style={styles.avatarLetter}>
+                  {displayName[0]?.toUpperCase() ?? "?"}
+                </Text>
+              </View>
+              <Text style={styles.userName} numberOfLines={1}>
+                {displayName}
+              </Text>
             </View>
 
             <TouchableOpacity
@@ -127,7 +126,6 @@ export function ItemCard({ item, onPress, isOwner, onDelete }: Props) {
                   name="heart"
                   size={14}
                   color={liked ? COLORS.error : COLORS.gray400}
-                  style={liked ? { color: COLORS.error } : {}}
                 />
               </Animated.View>
               {likesCount > 0 && (
@@ -162,10 +160,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.gray100,
     position: "relative",
   },
-  image: {
-    width: "100%",
-    height: "100%",
-  },
+  image: { width: "100%", height: "100%" },
   categoryBadge: {
     position: "absolute",
     bottom: 8,
@@ -191,10 +186,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  info: {
-    padding: 10,
-    gap: 4,
-  },
+  info: { padding: 10, gap: 4 },
   itemName: {
     fontSize: 13,
     fontFamily: "Inter_600SemiBold",
@@ -218,15 +210,16 @@ const styles = StyleSheet.create({
     gap: 5,
     flex: 1,
   },
-  avatar: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-  },
+  avatar: { width: 18, height: 18, borderRadius: 9 },
   avatarPlaceholder: {
-    backgroundColor: COLORS.gray200,
+    backgroundColor: COLORS.primary,
     alignItems: "center",
     justifyContent: "center",
+  },
+  avatarLetter: {
+    fontSize: 9,
+    fontFamily: "Inter_700Bold",
+    color: "#fff",
   },
   userName: {
     fontSize: 10,
@@ -234,17 +227,11 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     flex: 1,
   },
-  likeBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-  },
+  likeBtn: { flexDirection: "row", alignItems: "center", gap: 3 },
   likesCount: {
     fontSize: 11,
     fontFamily: "Inter_500Medium",
     color: COLORS.gray400,
   },
-  likesCountActive: {
-    color: COLORS.error,
-  },
+  likesCountActive: { color: COLORS.error },
 });

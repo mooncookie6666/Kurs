@@ -1,10 +1,29 @@
-import { Router, type IRouter } from "express";
-import { db, itemsTable, likesTable, usersTable } from "@workspace/db";
+/**
+ * Маршруты для вещей гардероба.
+ *
+ * Авторизация: проверяем req.session.userId (local auth)
+ * Закрытые маршруты (POST, DELETE, POST /like) требуют авторизации.
+ * Открытые маршруты (GET) доступны всем.
+ */
+
+import { Router, type IRouter, type Request, type Response } from "express";
+import {
+  db,
+  wardrobeItemsTable,
+  wardrobeLikesTable,
+  localUsersTable,
+} from "@workspace/db";
 import { eq, desc, and, sql, count } from "drizzle-orm";
 import { z } from "zod";
 
 const router: IRouter = Router();
 
+// Вспомогательная функция: получить авторизованного пользователя из сессии
+function getSessionUserId(req: Request): number | null {
+  return (req.session as any).userId ?? null;
+}
+
+// Категории одежды
 const CATEGORIES = [
   "Куртки",
   "Верхняя одежда",
@@ -22,90 +41,104 @@ const CATEGORIES = [
   "Другое",
 ];
 
-router.get("/categories", (_req, res) => {
+// GET /api/categories — список категорий (открытый)
+router.get("/categories", (_req: Request, res: Response) => {
   res.json(CATEGORIES);
 });
 
-router.get("/items", async (req, res) => {
+// ──────────────────────────────────────────────────────────────────────────────
+// GET /api/items — лента всех вещей (открытый маршрут)
+// Параметры: ?category= фильтр по категории, ?userId= фильтр по пользователю
+// ──────────────────────────────────────────────────────────────────────────────
+router.get("/items", async (req: Request, res: Response) => {
   try {
     const { category, userId } = req.query;
-    const currentUserId = req.user?.id;
+    const currentUserId = getSessionUserId(req);
 
     const items = await db
       .select({
-        id: itemsTable.id,
-        userId: itemsTable.userId,
-        name: itemsTable.name,
-        category: itemsTable.category,
-        description: itemsTable.description,
-        photoUrl: itemsTable.photoUrl,
-        createdAt: itemsTable.createdAt,
-        userFirstName: usersTable.firstName,
-        userLastName: usersTable.lastName,
-        userProfileImageUrl: usersTable.profileImageUrl,
-        likesCount: sql<number>`CAST(COUNT(DISTINCT ${likesTable.id}) AS INTEGER)`,
+        id: wardrobeItemsTable.id,
+        localUserId: wardrobeItemsTable.localUserId,
+        name: wardrobeItemsTable.name,
+        category: wardrobeItemsTable.category,
+        description: wardrobeItemsTable.description,
+        photoUrl: wardrobeItemsTable.photoUrl,
+        createdAt: wardrobeItemsTable.createdAt,
+        username: localUsersTable.username,
+        likesCount: sql<number>`CAST(COUNT(DISTINCT ${wardrobeLikesTable.id}) AS INTEGER)`,
+        // Проверяем, лайкнул ли текущий авторизованный пользователь эту вещь
         likedByMe: currentUserId
-          ? sql<boolean>`BOOL_OR(${likesTable.userId} = ${currentUserId})`
+          ? sql<boolean>`BOOL_OR(${wardrobeLikesTable.localUserId} = ${currentUserId})`
           : sql<boolean>`FALSE`,
       })
-      .from(itemsTable)
-      .leftJoin(usersTable, eq(itemsTable.userId, usersTable.id))
-      .leftJoin(likesTable, eq(itemsTable.id, likesTable.itemId))
+      .from(wardrobeItemsTable)
+      .leftJoin(
+        localUsersTable,
+        eq(wardrobeItemsTable.localUserId, localUsersTable.id)
+      )
+      .leftJoin(
+        wardrobeLikesTable,
+        eq(wardrobeItemsTable.id, wardrobeLikesTable.itemId)
+      )
       .where(
         and(
           category && typeof category === "string"
-            ? eq(itemsTable.category, category)
+            ? eq(wardrobeItemsTable.category, category)
             : undefined,
-          userId && typeof userId === "string"
-            ? eq(itemsTable.userId, userId)
+          userId && !isNaN(Number(userId))
+            ? eq(wardrobeItemsTable.localUserId, Number(userId))
             : undefined
         )
       )
       .groupBy(
-        itemsTable.id,
-        itemsTable.userId,
-        itemsTable.name,
-        itemsTable.category,
-        itemsTable.description,
-        itemsTable.photoUrl,
-        itemsTable.createdAt,
-        usersTable.firstName,
-        usersTable.lastName,
-        usersTable.profileImageUrl
+        wardrobeItemsTable.id,
+        wardrobeItemsTable.localUserId,
+        wardrobeItemsTable.name,
+        wardrobeItemsTable.category,
+        wardrobeItemsTable.description,
+        wardrobeItemsTable.photoUrl,
+        wardrobeItemsTable.createdAt,
+        localUsersTable.username
       )
-      .orderBy(desc(itemsTable.createdAt));
+      .orderBy(desc(wardrobeItemsTable.createdAt));
 
     res.json(items);
   } catch (err) {
     console.error("Error fetching items:", err);
-    res.status(500).json({ error: "Failed to fetch items" });
+    res.status(500).json({ error: "Не удалось загрузить вещи" });
   }
 });
 
 const createItemSchema = z.object({
-  name: z.string().min(1),
-  category: z.string().min(1),
+  name: z.string().min(1, "Введите название"),
+  category: z.string().min(1, "Выберите категорию"),
   description: z.string().optional(),
-  photoUrl: z.string().min(1),
+  photoUrl: z.string().min(1, "Добавьте ссылку на фото"),
 });
 
-router.post("/items", async (req, res) => {
-  if (!req.isAuthenticated()) {
-    res.status(401).json({ error: "Unauthorized" });
+// ──────────────────────────────────────────────────────────────────────────────
+// POST /api/items — добавить вещь (только авторизованным)
+// ──────────────────────────────────────────────────────────────────────────────
+router.post("/items", async (req: Request, res: Response) => {
+  // Проверяем авторизацию через сессию
+  const userId = getSessionUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Необходимо войти в аккаунт" });
     return;
   }
 
   const parsed = createItemSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: "Invalid request body" });
+    const msg = parsed.error.errors[0]?.message ?? "Некорректные данные";
+    res.status(400).json({ error: msg });
     return;
   }
 
   try {
     const [item] = await db
-      .insert(itemsTable)
+      .insert(wardrobeItemsTable)
       .values({
-        userId: req.user.id,
+        localUserId: userId,
         name: parsed.data.name,
         category: parsed.data.category,
         description: parsed.data.description ?? null,
@@ -116,67 +149,77 @@ router.post("/items", async (req, res) => {
     res.status(201).json(item);
   } catch (err) {
     console.error("Error creating item:", err);
-    res.status(500).json({ error: "Failed to create item" });
+    res.status(500).json({ error: "Не удалось добавить вещь" });
   }
 });
 
-router.delete("/items/:id", async (req, res) => {
-  if (!req.isAuthenticated()) {
-    res.status(401).json({ error: "Unauthorized" });
+// ──────────────────────────────────────────────────────────────────────────────
+// DELETE /api/items/:id — удалить вещь (только владелец)
+// ──────────────────────────────────────────────────────────────────────────────
+router.delete("/items/:id", async (req: Request, res: Response) => {
+  const userId = getSessionUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Необходимо войти в аккаунт" });
     return;
   }
 
   const id = parseInt(req.params.id);
   if (isNaN(id)) {
-    res.status(400).json({ error: "Invalid id" });
+    res.status(400).json({ error: "Некорректный ID" });
     return;
   }
 
   try {
     const [item] = await db
       .select()
-      .from(itemsTable)
-      .where(eq(itemsTable.id, id))
+      .from(wardrobeItemsTable)
+      .where(eq(wardrobeItemsTable.id, id))
       .limit(1);
 
     if (!item) {
-      res.status(404).json({ error: "Item not found" });
+      res.status(404).json({ error: "Вещь не найдена" });
       return;
     }
 
-    if (item.userId !== req.user.id) {
-      res.status(403).json({ error: "Forbidden" });
+    // Только владелец может удалить свою вещь
+    if (item.localUserId !== userId) {
+      res.status(403).json({ error: "Нет прав для удаления" });
       return;
     }
 
-    await db.delete(itemsTable).where(eq(itemsTable.id, id));
+    await db.delete(wardrobeItemsTable).where(eq(wardrobeItemsTable.id, id));
     res.json({ success: true });
   } catch (err) {
     console.error("Error deleting item:", err);
-    res.status(500).json({ error: "Failed to delete item" });
+    res.status(500).json({ error: "Не удалось удалить вещь" });
   }
 });
 
-router.post("/items/:id/like", async (req, res) => {
-  if (!req.isAuthenticated()) {
-    res.status(401).json({ error: "Unauthorized" });
+// ──────────────────────────────────────────────────────────────────────────────
+// POST /api/items/:id/like — переключить лайк (только авторизованным)
+// ──────────────────────────────────────────────────────────────────────────────
+router.post("/items/:id/like", async (req: Request, res: Response) => {
+  const userId = getSessionUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Необходимо войти в аккаунт" });
     return;
   }
 
   const id = parseInt(req.params.id);
   if (isNaN(id)) {
-    res.status(400).json({ error: "Invalid id" });
+    res.status(400).json({ error: "Некорректный ID" });
     return;
   }
 
   try {
+    // Проверяем, лайкнул ли уже
     const existing = await db
       .select()
-      .from(likesTable)
+      .from(wardrobeLikesTable)
       .where(
         and(
-          eq(likesTable.userId, req.user.id),
-          eq(likesTable.itemId, id)
+          eq(wardrobeLikesTable.localUserId, userId),
+          eq(wardrobeLikesTable.itemId, id)
         )
       )
       .limit(1);
@@ -184,32 +227,33 @@ router.post("/items/:id/like", async (req, res) => {
     let liked: boolean;
 
     if (existing.length > 0) {
-      await db
-        .delete(likesTable)
-        .where(
-          and(
-            eq(likesTable.userId, req.user.id),
-            eq(likesTable.itemId, id)
-          )
-        );
+      // Убираем лайк
+      await db.delete(wardrobeLikesTable).where(
+        and(
+          eq(wardrobeLikesTable.localUserId, userId),
+          eq(wardrobeLikesTable.itemId, id)
+        )
+      );
       liked = false;
     } else {
-      await db.insert(likesTable).values({
-        userId: req.user.id,
+      // Ставим лайк
+      await db.insert(wardrobeLikesTable).values({
+        localUserId: userId,
         itemId: id,
       });
       liked = true;
     }
 
+    // Возвращаем актуальное количество лайков
     const [countResult] = await db
       .select({ count: count() })
-      .from(likesTable)
-      .where(eq(likesTable.itemId, id));
+      .from(wardrobeLikesTable)
+      .where(eq(wardrobeLikesTable.itemId, id));
 
     res.json({ liked, likesCount: countResult?.count ?? 0 });
   } catch (err) {
     console.error("Error toggling like:", err);
-    res.status(500).json({ error: "Failed to toggle like" });
+    res.status(500).json({ error: "Ошибка" });
   }
 });
 

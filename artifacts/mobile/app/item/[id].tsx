@@ -23,7 +23,7 @@ import Animated, {
 import * as Haptics from "expo-haptics";
 import { COLORS } from "@/constants/colors";
 import { useAuth } from "@/lib/auth";
-import { fetchItems, toggleLike, ItemWithUser } from "@/lib/api";
+import { apiGetItems, apiToggleLike, WardrobeItem } from "@/lib/api";
 
 const { width } = Dimensions.get("window");
 
@@ -46,10 +46,10 @@ export default function ItemDetailScreen() {
 
   const { data: items = [], isLoading } = useQuery({
     queryKey: ["items"],
-    queryFn: () => fetchItems(),
+    queryFn: () => apiGetItems(),
   });
 
-  const item: ItemWithUser | undefined = items.find((i) => i.id === Number(id));
+  const item: WardrobeItem | undefined = items.find((i) => i.id === Number(id));
 
   const effectiveLiked = liked !== null ? liked : item?.likedByMe ?? false;
   const effectiveLikesCount = likesCount !== null ? likesCount : item?.likesCount ?? 0;
@@ -69,7 +69,7 @@ export default function ItemDetailScreen() {
     setIsLiking(true);
 
     try {
-      const result = await toggleLike(item.id);
+      const result = await apiToggleLike(item.id);
       setLiked(result.liked);
       setLikesCount(result.likesCount);
     } catch {
@@ -100,15 +100,15 @@ export default function ItemDetailScreen() {
     );
   }
 
-  const displayName = item.userFirstName
-    ? `${item.userFirstName}${item.userLastName ? ` ${item.userLastName}` : ""}`
-    : "Пользователь";
+  const displayName = item.username ?? "Пользователь";
 
   const createdDate = new Date(item.createdAt).toLocaleDateString("ru-RU", {
     day: "numeric",
     month: "long",
     year: "numeric",
   });
+
+  const isOwn = user && item.localUserId === user.id;
 
   return (
     <View style={styles.container}>
@@ -177,19 +177,14 @@ export default function ItemDetailScreen() {
           <View style={styles.userSection}>
             <Text style={styles.sectionLabel}>Добавил</Text>
             <View style={styles.userCard}>
-              {item.userProfileImageUrl ? (
-                <Image
-                  source={{ uri: item.userProfileImageUrl }}
-                  style={styles.userAvatar}
-                />
-              ) : (
-                <View style={[styles.userAvatar, styles.userAvatarPlaceholder]}>
-                  <Feather name="user" size={20} color={COLORS.gray400} />
-                </View>
-              )}
+              <View style={[styles.userAvatar, styles.userAvatarPlaceholder]}>
+                <Text style={styles.userAvatarLetter}>
+                  {displayName[0]?.toUpperCase() ?? "?"}
+                </Text>
+              </View>
               <View>
                 <Text style={styles.userName}>{displayName}</Text>
-                {item.userId === user?.id && (
+                {isOwn && (
                   <Text style={styles.userTagline}>Это ваша вещь</Text>
                 )}
               </View>
@@ -202,25 +197,15 @@ export default function ItemDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.white,
-  },
-  centered: {
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
-  },
+  container: { flex: 1, backgroundColor: COLORS.white },
+  centered: { alignItems: "center", justifyContent: "center", gap: 12 },
   imageContainer: {
     width: "100%",
     height: width * 1.1,
     backgroundColor: COLORS.gray100,
     position: "relative",
   },
-  image: {
-    width: "100%",
-    height: "100%",
-  },
+  image: { width: "100%", height: "100%" },
   backBtn: {
     position: "absolute",
     left: 16,
@@ -236,19 +221,13 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 3,
   },
-  content: {
-    padding: 20,
-    gap: 20,
-  },
+  content: { padding: 20, gap: 20 },
   titleRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
   },
-  titleGroup: {
-    flex: 1,
-    gap: 8,
-  },
+  titleGroup: { flex: 1, gap: 8 },
   itemName: {
     fontSize: 24,
     fontFamily: "Inter_700Bold",
@@ -268,20 +247,13 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_500Medium",
     color: COLORS.primary,
   },
-  likeBtn: {
-    alignItems: "center",
-    gap: 4,
-    paddingTop: 4,
-    paddingLeft: 16,
-  },
+  likeBtn: { alignItems: "center", gap: 4, paddingTop: 4, paddingLeft: 16 },
   likesCount: {
     fontSize: 13,
     fontFamily: "Inter_600SemiBold",
     color: COLORS.gray400,
   },
-  likesCountActive: {
-    color: COLORS.error,
-  },
+  likesCountActive: { color: COLORS.error },
   sectionLabel: {
     fontSize: 11,
     fontFamily: "Inter_600SemiBold",
@@ -290,31 +262,21 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     marginBottom: 6,
   },
-  descriptionSection: {
-    gap: 0,
-  },
+  descriptionSection: { gap: 0 },
   description: {
     fontSize: 15,
     fontFamily: "Inter_400Regular",
     color: COLORS.text,
     lineHeight: 24,
   },
-  metaSection: {
-    gap: 8,
-  },
-  metaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
+  metaSection: { gap: 8 },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   metaText: {
     fontSize: 13,
     fontFamily: "Inter_400Regular",
     color: COLORS.textSecondary,
   },
-  userSection: {
-    gap: 0,
-  },
+  userSection: { gap: 0 },
   userCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -323,15 +285,16 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.gray100,
     borderRadius: 14,
   },
-  userAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-  },
+  userAvatar: { width: 44, height: 44, borderRadius: 22 },
   userAvatarPlaceholder: {
-    backgroundColor: COLORS.gray200,
+    backgroundColor: COLORS.primary,
     alignItems: "center",
     justifyContent: "center",
+  },
+  userAvatarLetter: {
+    fontSize: 18,
+    fontFamily: "Inter_700Bold",
+    color: "#fff",
   },
   userName: {
     fontSize: 15,
