@@ -6,9 +6,6 @@
  * 2. Браузер автоматически сохраняет cookie и отправляет при каждом запросе
  * 3. credentials: "include" — обязательный параметр для cross-origin запросов
  * 4. Сервер по session_id находит userId → выполняет запрос как авторизованный
- *
- * httpOnly cookie недоступен из JS (защита от XSS).
- * Сессия живёт 7 дней.
  */
 
 function getBase(): string {
@@ -35,6 +32,8 @@ export interface User {
   id: number;
   email: string;
   username: string;
+  isAdmin?: boolean;
+  isBlocked?: boolean;
   createdAt?: string;
 }
 
@@ -49,6 +48,16 @@ export interface WardrobeItem {
   username?: string;
   likesCount: number;
   likedByMe: boolean;
+}
+
+export interface AdminUser {
+  id: number;
+  email: string;
+  username: string;
+  isAdmin: boolean;
+  isBlocked: boolean;
+  createdAt: string;
+  itemsCount: number;
 }
 
 // ─── Auth API ────────────────────────────────────────────────────────────────
@@ -144,4 +153,42 @@ export async function apiGetCategories(): Promise<string[]> {
   const res = await apiFetch("/categories");
   if (!res.ok) return [];
   return res.json();
+}
+
+// ─── Upload API ───────────────────────────────────────────────────────────────
+
+export async function apiUploadImage(base64DataUrl: string): Promise<string> {
+  const res = await apiFetch("/upload/image", {
+    method: "POST",
+    body: JSON.stringify({ data: base64DataUrl }),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? "Ошибка загрузки фото");
+  return json.url as string;
+}
+
+// ─── Admin API ────────────────────────────────────────────────────────────────
+
+export async function apiAdminGetUsers(): Promise<AdminUser[]> {
+  const res = await apiFetch("/admin/users");
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? "Ошибка");
+  return json;
+}
+
+export async function apiAdminBlockUser(
+  id: number
+): Promise<{ isBlocked: boolean; message: string }> {
+  const res = await apiFetch(`/admin/users/${id}/block`, { method: "POST" });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? "Ошибка");
+  return json;
+}
+
+export async function apiAdminDeleteItem(id: number): Promise<void> {
+  const res = await apiFetch(`/admin/items/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const json = await res.json();
+    throw new Error(json.error ?? "Ошибка при удалении");
+  }
 }

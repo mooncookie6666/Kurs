@@ -9,9 +9,10 @@ import {
   Dimensions,
   Platform,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import Animated, {
@@ -23,14 +24,25 @@ import Animated, {
 import * as Haptics from "expo-haptics";
 import { COLORS } from "@/constants/colors";
 import { useAuth } from "@/lib/auth";
-import { apiGetItems, apiToggleLike, WardrobeItem } from "@/lib/api";
+import { apiGetItems, apiToggleLike, apiDeleteItem, apiAdminDeleteItem, WardrobeItem } from "@/lib/api";
 
 const { width } = Dimensions.get("window");
+
+function resolvePhotoUrl(url: string): string {
+  if (!url) return url;
+  if (url.startsWith("http")) return url;
+  if (url.startsWith("/api/storage")) {
+    const base = process.env.EXPO_PUBLIC_API_URL ?? "";
+    return `${base}${url}`;
+  }
+  return url;
+}
 
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
@@ -38,6 +50,7 @@ export default function ItemDetailScreen() {
   const [liked, setLiked] = useState<boolean | null>(null);
   const [likesCount, setLikesCount] = useState<number | null>(null);
   const [isLiking, setIsLiking] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const heartScale = useSharedValue(1);
   const heartAnimStyle = useAnimatedStyle(() => ({
@@ -53,6 +66,9 @@ export default function ItemDetailScreen() {
 
   const effectiveLiked = liked !== null ? liked : item?.likedByMe ?? false;
   const effectiveLikesCount = likesCount !== null ? likesCount : item?.likesCount ?? 0;
+
+  const isOwn = user && item && item.localUserId === user.id;
+  const canDelete = isOwn || user?.isAdmin;
 
   const handleLike = async () => {
     if (!item || isLiking) return;
@@ -80,6 +96,39 @@ export default function ItemDetailScreen() {
     }
   };
 
+  const handleDelete = () => {
+    if (!item || !canDelete) return;
+    Alert.alert(
+      "Удалить вещь?",
+      user?.isAdmin && !isOwn
+        ? `Вы удаляете вещь пользователя @${item.username}. Это действие нельзя отменить.`
+        : "Это действие нельзя отменить.",
+      [
+        { text: "Отмена", style: "cancel" },
+        {
+          text: "Удалить",
+          style: "destructive",
+          onPress: async () => {
+            setIsDeleting(true);
+            try {
+              if (user?.isAdmin && !isOwn) {
+                await apiAdminDeleteItem(item.id);
+              } else {
+                await apiDeleteItem(item.id);
+              }
+              queryClient.invalidateQueries({ queryKey: ["items"] });
+              router.back();
+            } catch (err: any) {
+              Alert.alert("Ошибка", err.message ?? "Не удалось удалить");
+            } finally {
+              setIsDeleting(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   if (isLoading) {
     return (
       <View style={[styles.container, styles.centered]}>
@@ -101,14 +150,11 @@ export default function ItemDetailScreen() {
   }
 
   const displayName = item.username ?? "Пользователь";
-
   const createdDate = new Date(item.createdAt).toLocaleDateString("ru-RU", {
     day: "numeric",
     month: "long",
     year: "numeric",
   });
-
-  const isOwn = user && item.localUserId === user.id;
 
   return (
     <View style={styles.container}>
@@ -118,7 +164,7 @@ export default function ItemDetailScreen() {
       >
         <View style={styles.imageContainer}>
           <Image
-            source={{ uri: item.photoUrl }}
+            source={{ uri: resolvePhotoUrl(item.photoUrl) }}
             style={styles.image}
             resizeMode="cover"
           />
@@ -128,6 +174,20 @@ export default function ItemDetailScreen() {
           >
             <Feather name="arrow-left" size={20} color={COLORS.black} />
           </TouchableOpacity>
+
+          {canDelete && (
+            <TouchableOpacity
+              style={[styles.deleteBtn, { top: topPad + 8 }]}
+              onPress={handleDelete}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <ActivityIndicator size="small" color={COLORS.error} />
+              ) : (
+                <Feather name="trash-2" size={18} color={COLORS.error} />
+              )}
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={styles.content}>
@@ -149,10 +209,7 @@ export default function ItemDetailScreen() {
               </Animated.View>
               {effectiveLikesCount > 0 && (
                 <Text
-                  style={[
-                    styles.likesCount,
-                    effectiveLiked && styles.likesCountActive,
-                  ]}
+                  style={[styles.likesCount, effectiveLiked && styles.likesCountActive]}
                 >
                   {effectiveLikesCount}
                 </Text>
@@ -184,8 +241,9 @@ export default function ItemDetailScreen() {
               </View>
               <View>
                 <Text style={styles.userName}>{displayName}</Text>
-                {isOwn && (
-                  <Text style={styles.userTagline}>Это ваша вещь</Text>
+                {isOwn && <Text style={styles.userTagline}>Это ваша вещь</Text>}
+                {user?.isAdmin && !isOwn && (
+                  <Text style={styles.adminTagline}>Можно удалить (права админа)</Text>
                 )}
               </View>
             </View>
@@ -209,112 +267,61 @@ const styles = StyleSheet.create({
   backBtn: {
     position: "absolute",
     left: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 40, height: 40, borderRadius: 12,
     backgroundColor: "rgba(255,255,255,0.9)",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
+    alignItems: "center", justifyContent: "center",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1, shadowRadius: 6, elevation: 3,
+  },
+  deleteBtn: {
+    position: "absolute",
+    right: 16,
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.9)",
+    alignItems: "center", justifyContent: "center",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1, shadowRadius: 6, elevation: 3,
   },
   content: { padding: 20, gap: 20 },
   titleRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
+    flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between",
   },
   titleGroup: { flex: 1, gap: 8 },
   itemName: {
-    fontSize: 24,
-    fontFamily: "Inter_700Bold",
-    color: COLORS.black,
-    letterSpacing: -0.5,
-    lineHeight: 30,
+    fontSize: 24, fontFamily: "Inter_700Bold",
+    color: COLORS.black, letterSpacing: -0.5, lineHeight: 30,
   },
   categoryBadge: {
     alignSelf: "flex-start",
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    backgroundColor: COLORS.primarySurface,
-    borderRadius: 8,
+    paddingHorizontal: 12, paddingVertical: 5,
+    backgroundColor: COLORS.primarySurface, borderRadius: 8,
   },
-  categoryText: {
-    fontSize: 12,
-    fontFamily: "Inter_500Medium",
-    color: COLORS.primary,
-  },
+  categoryText: { fontSize: 12, fontFamily: "Inter_500Medium", color: COLORS.primary },
   likeBtn: { alignItems: "center", gap: 4, paddingTop: 4, paddingLeft: 16 },
-  likesCount: {
-    fontSize: 13,
-    fontFamily: "Inter_600SemiBold",
-    color: COLORS.gray400,
-  },
+  likesCount: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: COLORS.gray400 },
   likesCountActive: { color: COLORS.error },
   sectionLabel: {
-    fontSize: 11,
-    fontFamily: "Inter_600SemiBold",
-    color: COLORS.textTertiary,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    marginBottom: 6,
+    fontSize: 11, fontFamily: "Inter_600SemiBold",
+    color: COLORS.textTertiary, textTransform: "uppercase",
+    letterSpacing: 0.8, marginBottom: 6,
   },
   descriptionSection: { gap: 0 },
-  description: {
-    fontSize: 15,
-    fontFamily: "Inter_400Regular",
-    color: COLORS.text,
-    lineHeight: 24,
-  },
+  description: { fontSize: 15, fontFamily: "Inter_400Regular", color: COLORS.text, lineHeight: 24 },
   metaSection: { gap: 8 },
   metaRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  metaText: {
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-    color: COLORS.textSecondary,
-  },
+  metaText: { fontSize: 13, fontFamily: "Inter_400Regular", color: COLORS.textSecondary },
   userSection: { gap: 0 },
   userCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 14,
-    backgroundColor: COLORS.gray100,
-    borderRadius: 14,
+    flexDirection: "row", alignItems: "center",
+    gap: 12, padding: 14,
+    backgroundColor: COLORS.gray100, borderRadius: 14,
   },
   userAvatar: { width: 44, height: 44, borderRadius: 22 },
-  userAvatarPlaceholder: {
-    backgroundColor: COLORS.primary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  userAvatarLetter: {
-    fontSize: 18,
-    fontFamily: "Inter_700Bold",
-    color: "#fff",
-  },
-  userName: {
-    fontSize: 15,
-    fontFamily: "Inter_600SemiBold",
-    color: COLORS.black,
-  },
-  userTagline: {
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-    color: COLORS.primary,
-    marginTop: 2,
-  },
-  notFoundText: {
-    fontSize: 17,
-    fontFamily: "Inter_500Medium",
-    color: COLORS.text,
-  },
-  backLink: {
-    fontSize: 15,
-    fontFamily: "Inter_500Medium",
-    color: COLORS.primary,
-  },
+  userAvatarPlaceholder: { backgroundColor: COLORS.primary, alignItems: "center", justifyContent: "center" },
+  userAvatarLetter: { fontSize: 18, fontFamily: "Inter_700Bold", color: "#fff" },
+  userName: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: COLORS.black },
+  userTagline: { fontSize: 12, fontFamily: "Inter_400Regular", color: COLORS.primary, marginTop: 2 },
+  adminTagline: { fontSize: 12, fontFamily: "Inter_400Regular", color: COLORS.error, marginTop: 2 },
+  notFoundText: { fontSize: 17, fontFamily: "Inter_500Medium", color: COLORS.text },
+  backLink: { fontSize: 15, fontFamily: "Inter_500Medium", color: COLORS.primary },
 });

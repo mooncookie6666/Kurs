@@ -71,12 +71,22 @@ export function ItemCard({ item, onPress, isOwner, onDelete }: Props) {
 
   const displayName = item.username ?? "Пользователь";
 
+  function resolvePhotoUrl(url: string): string {
+    if (!url) return url;
+    if (url.startsWith("http")) return url;
+    if (url.startsWith("/api/storage")) {
+      const base = process.env.EXPO_PUBLIC_API_URL ?? "";
+      return `${base}${url}`;
+    }
+    return url;
+  }
+
   return (
     <Animated.View style={[styles.card, animStyle]}>
       <TouchableOpacity activeOpacity={0.95} onPress={onPress}>
         <View style={styles.imageContainer}>
           <Image
-            source={{ uri: item.photoUrl }}
+            source={{ uri: resolvePhotoUrl(item.photoUrl) }}
             style={styles.image}
             resizeMode="cover"
           />

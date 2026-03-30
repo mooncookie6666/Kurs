@@ -1,31 +1,16 @@
 import { BlurView } from "expo-blur";
-import { isLiquidGlassAvailable } from "expo-glass-effect";
 import { Tabs } from "expo-router";
-import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
-import { SymbolView } from "expo-symbols";
 import { Feather } from "@expo/vector-icons";
+import { SymbolView } from "expo-symbols";
 import React from "react";
-import { Platform, StyleSheet, View, useColorScheme } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 import { COLORS } from "@/constants/colors";
+import { useAuth } from "@/lib/auth";
 
-function NativeTabLayout() {
-  return (
-    <NativeTabs>
-      <NativeTabs.Trigger name="index">
-        <Icon sf={{ default: "house", selected: "house.fill" }} />
-        <Label>Лента</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="profile">
-        <Icon sf={{ default: "person", selected: "person.fill" }} />
-        <Label>Профиль</Label>
-      </NativeTabs.Trigger>
-    </NativeTabs>
-  );
-}
-
-function ClassicTabLayout() {
+export default function TabLayout() {
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
+  const { user } = useAuth();
 
   return (
     <Tabs
@@ -43,15 +28,9 @@ function ClassicTabLayout() {
         },
         tabBarBackground: () =>
           isIOS ? (
-            <BlurView
-              intensity={80}
-              tint="light"
-              style={StyleSheet.absoluteFill}
-            />
+            <BlurView intensity={80} tint="light" style={StyleSheet.absoluteFill} />
           ) : isWeb ? (
-            <View
-              style={[StyleSheet.absoluteFill, { backgroundColor: COLORS.white }]}
-            />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: COLORS.white }]} />
           ) : null,
       }}
     >
@@ -79,13 +58,14 @@ function ClassicTabLayout() {
             ),
         }}
       />
+      <Tabs.Screen
+        name="admin"
+        options={{
+          title: "Админ",
+          tabBarIcon: ({ color }) => <Feather name="shield" size={22} color={color} />,
+          href: user?.isAdmin ? "/(tabs)/admin" : null,
+        }}
+      />
     </Tabs>
   );
-}
-
-export default function TabLayout() {
-  if (isLiquidGlassAvailable()) {
-    return <NativeTabLayout />;
-  }
-  return <ClassicTabLayout />;
 }

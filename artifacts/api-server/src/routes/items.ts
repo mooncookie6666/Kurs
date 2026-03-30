@@ -127,6 +127,18 @@ router.post("/items", async (req: Request, res: Response) => {
     return;
   }
 
+  // Проверяем, не заблокирован ли пользователь
+  const [currentUser] = await db
+    .select({ isBlocked: localUsersTable.isBlocked })
+    .from(localUsersTable)
+    .where(eq(localUsersTable.id, userId))
+    .limit(1);
+
+  if (currentUser?.isBlocked) {
+    res.status(403).json({ error: "Ваш аккаунт заблокирован. Вы не можете добавлять вещи." });
+    return;
+  }
+
   const parsed = createItemSchema.safeParse(req.body);
   if (!parsed.success) {
     const msg = parsed.error.errors[0]?.message ?? "Некорректные данные";
