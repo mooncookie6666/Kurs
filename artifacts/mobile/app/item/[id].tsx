@@ -31,7 +31,7 @@ const { width } = Dimensions.get("window");
 function resolvePhotoUrl(url: string): string {
   if (!url) return url;
   if (url.startsWith("http")) return url;
-  if (url.startsWith("/api/storage")) {
+  if (url.startsWith("/api/")) {
     const base = process.env.EXPO_PUBLIC_API_URL ?? "";
     return `${base}${url}`;
   }

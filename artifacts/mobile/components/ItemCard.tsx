@@ -32,6 +32,7 @@ export function ItemCard({ item, onPress, isOwner, onDelete }: Props) {
   const [liked, setLiked] = useState(item.likedByMe);
   const [likesCount, setLikesCount] = useState(item.likesCount);
   const [isLiking, setIsLiking] = useState(false);
+  const [imgError, setImgError] = useState(false);
 
   const scale = useSharedValue(1);
   const heartScale = useSharedValue(1);
@@ -74,7 +75,7 @@ export function ItemCard({ item, onPress, isOwner, onDelete }: Props) {
   function resolvePhotoUrl(url: string): string {
     if (!url) return url;
     if (url.startsWith("http")) return url;
-    if (url.startsWith("/api/storage")) {
+    if (url.startsWith("/api/")) {
       const base = process.env.EXPO_PUBLIC_API_URL ?? "";
       return `${base}${url}`;
     }
@@ -85,11 +86,19 @@ export function ItemCard({ item, onPress, isOwner, onDelete }: Props) {
     <Animated.View style={[styles.card, animStyle]}>
       <TouchableOpacity activeOpacity={0.95} onPress={onPress}>
         <View style={styles.imageContainer}>
-          <Image
-            source={{ uri: resolvePhotoUrl(item.photoUrl) }}
-            style={styles.image}
-            resizeMode="cover"
-          />
+          {imgError ? (
+            <View style={[styles.image, styles.imgPlaceholder]}>
+              <Feather name="image" size={28} color={COLORS.gray400} />
+              <Text style={styles.imgPlaceholderText}>Фото недоступно</Text>
+            </View>
+          ) : (
+            <Image
+              source={{ uri: resolvePhotoUrl(item.photoUrl) }}
+              style={styles.image}
+              resizeMode="cover"
+              onError={() => setImgError(true)}
+            />
+          )}
           <View style={styles.categoryBadge}>
             <Text style={styles.categoryText}>{item.category}</Text>
           </View>
@@ -171,6 +180,17 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   image: { width: "100%", height: "100%" },
+  imgPlaceholder: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: COLORS.gray100,
+  },
+  imgPlaceholderText: {
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+    color: COLORS.gray400,
+  },
   categoryBadge: {
     position: "absolute",
     bottom: 8,

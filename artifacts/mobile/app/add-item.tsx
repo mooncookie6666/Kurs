@@ -36,6 +36,7 @@ export default function AddItemScreen() {
   const [localImageUri, setLocalImageUri] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [urlPreviewError, setUrlPreviewError] = useState(false);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
@@ -209,12 +210,31 @@ export default function AddItemScreen() {
                   placeholder="https://..."
                   placeholderTextColor={COLORS.gray400}
                   value={photoUrl}
-                  onChangeText={setPhotoUrl}
+                  onChangeText={(v) => { setPhotoUrl(v); setUrlPreviewError(false); }}
                   autoCapitalize="none"
                   keyboardType="url"
                   returnKeyType="next"
                 />
-                <Text style={styles.hint}>Вставьте прямую ссылку на изображение</Text>
+                <Text style={styles.hint}>Вставьте прямую ссылку на изображение (.jpg, .png и т.д.)</Text>
+                {photoUrl.startsWith("http") && (
+                  <View style={styles.urlPreviewBox}>
+                    {urlPreviewError ? (
+                      <View style={styles.urlPreviewError}>
+                        <Feather name="alert-circle" size={18} color={COLORS.error} />
+                        <Text style={styles.urlPreviewErrorText}>
+                          Изображение не загружается. Убедитесь, что ссылка ведёт прямо на фото.
+                        </Text>
+                      </View>
+                    ) : (
+                      <Image
+                        source={{ uri: photoUrl }}
+                        style={styles.urlPreviewImg}
+                        resizeMode="cover"
+                        onError={() => setUrlPreviewError(true)}
+                      />
+                    )}
+                  </View>
+                )}
               </>
             ) : (
               <TouchableOpacity
@@ -378,4 +398,26 @@ const styles = StyleSheet.create({
   },
   galleryPickerText: { fontSize: 15, fontFamily: "Inter_500Medium", color: COLORS.text },
   previewThumb: { width: 44, height: 44, borderRadius: 10 },
+  urlPreviewBox: {
+    height: 160,
+    borderRadius: 12,
+    overflow: "hidden",
+    backgroundColor: COLORS.gray100,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  urlPreviewImg: { width: "100%", height: "100%" },
+  urlPreviewError: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 16,
+  },
+  urlPreviewErrorText: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    color: COLORS.error,
+    textAlign: "center",
+  },
 });

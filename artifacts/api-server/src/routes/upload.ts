@@ -1,19 +1,11 @@
-/**
- * Маршрут загрузки фотографий.
- *
- * POST /api/upload/image — принимает изображение в формате base64 от мобильного приложения,
- * сохраняет в Object Storage и возвращает публичный URL.
- *
- * Формат запроса: { data: "data:image/jpeg;base64,..." }
- * Формат ответа:  { url: "https://..." }
- */
-
 import { Router, type IRouter, type Request, type Response } from "express";
-import { ObjectStorageService } from "../lib/objectStorage";
-import { Readable } from "stream";
+import { writeFile, mkdir } from "fs/promises";
+import { join } from "path";
+import { randomUUID } from "crypto";
 
 const router: IRouter = Router();
-const storage = new ObjectStorageService();
+
+const UPLOADS_DIR = join(process.cwd(), "uploads");
 
 router.post("/upload/image", async (req: Request, res: Response) => {
   const userId = (req.session as any).userId;
@@ -28,41 +20,27 @@ router.post("/upload/image", async (req: Request, res: Response) => {
     return;
   }
 
+  const match = data.match(/^data:([a-zA-Z0-9+/]+\/[a-zA-Z0-9+/]+);base64,(.+)$/);
+  if (!match) {
+    res.status(400).json({ error: "Неверный формат изображения (ожидается base64 data URL)" });
+    return;
+  }
+
+  const contentType = match[1]!;
+  const base64 = match[2]!;
+  const ext = contentType.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
+  const filename = `${randomUUID()}.${ext}`;
+
   try {
-    // data — строка вида "data:image/jpeg;base64,<base64>"
-    const match = data.match(/^data:([a-zA-Z0-9+/]+\/[a-zA-Z0-9+/]+);base64,(.+)$/);
-    if (!match) {
-      res.status(400).json({ error: "Неверный формат изображения (ожидается base64 data URL)" });
-      return;
-    }
-
-    const contentType = match[1]!;
-    const base64 = match[2]!;
+    await mkdir(UPLOADS_DIR, { recursive: true });
     const buffer = Buffer.from(base64, "base64");
+    await writeFile(join(UPLOADS_DIR, filename), buffer);
 
-    // Получаем presigned URL для загрузки
-    const uploadUrl = await storage.getObjectEntityUploadURL();
-
-    // Загружаем напрямую в GCS через presigned URL
-    const uploadRes = await fetch(uploadUrl, {
-      method: "PUT",
-      headers: { "Content-Type": contentType },
-      body: buffer,
-    });
-
-    if (!uploadRes.ok) {
-      throw new Error(`GCS upload failed: ${uploadRes.status}`);
-    }
-
-    // Нормализуем путь к объекту
-    const objectPath = storage.normalizeObjectEntityPath(uploadUrl.split("?")[0]!);
-    // Формируем URL для доступа к файлу через наш API
-    const publicUrl = `/api/storage${objectPath}`;
-
-    res.json({ url: publicUrl, objectPath });
+    const url = `/api/uploads/${filename}`;
+    res.json({ url });
   } catch (err) {
     console.error("Image upload error:", err);
-    res.status(500).json({ error: "Не удалось загрузить изображение" });
+    res.status(500).json({ error: "Не удалось сохранить изображение" });
   }
 });
 
